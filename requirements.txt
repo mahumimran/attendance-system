@@ -12,7 +12,7 @@ sqlalchemy==2.0.35
 # compiler, and no AVX-instruction requirement -- this runs on CPUs that
 # crash on prebuilt dlib wheels. Models are auto-downloaded on first run
 # (see backend/utils/model_downloader.py) into backend/models/onnx/.
-opencv-python==4.10.0.84
+opencv-python-headless==4.10.0.84
 numpy==1.26.4
 Pillow==10.4.0
 
