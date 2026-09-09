@@ -1,0 +1,39 @@
+# --- Web framework ---
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+
+# --- Database ---
+sqlalchemy==2.0.35
+
+# --- Computer Vision / Face Recognition ---
+# Face detection (YuNet) and face embeddings (SFace) both run through
+# OpenCV's own DNN module as plain ONNX models. No dlib, no CMake, no C++
+# compiler, and no AVX-instruction requirement -- this runs on CPUs that
+# crash on prebuilt dlib wheels. Models are auto-downloaded on first run
+# (see backend/utils/model_downloader.py) into backend/models/onnx/.
+opencv-python==4.10.0.84
+numpy==1.26.4
+Pillow==10.4.0
+
+# --- Data / Reports ---
+pandas==2.2.3
+openpyxl==3.1.5
+
+# --- Config / validation ---
+pydantic==2.9.2
+python-dotenv==1.0.1
+
+# NOTE ON MODEL DOWNLOAD:
+# The two ONNX models (~40 MB combined) are fetched automatically the
+# first time you start the server (needs internet on that first run only).
+# If your network blocks huggingface.co, download them manually and place
+# them in backend/models/onnx/:
+#   https://huggingface.co/opencv/face_detection_yunet/resolve/main/face_detection_yunet_2023mar.onnx
+#   https://huggingface.co/opencv/face_recognition_sface/resolve/main/face_recognition_sface_2021dec.onnx
+#
+# NOTE ON SWAPPING MODELS LATER:
+# To use InsightFace/ArcFace instead, replace the functions in
+# backend/services/face_recognition_service.py (_get_detector, _get_recognizer,
+# generate_embedding, find_best_match) with InsightFace's FaceAnalysis app --
+# the rest of the pipeline (routes, DB storage, thresholding) is unchanged.

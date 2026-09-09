@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Face Attendance · Smart School Attendance</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1>AI Face Recognition Attendance</h1>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3 style="margin-top:0;">Live Camera</h3>
+        <div class="camera-box" id="camera-box">
+          <video id="video" autoplay muted playsinline></video>
+          <div class="camera-status" id="camera-status">
+            <span class="status-dot"></span>
+            <span class="status-text">Camera not started.</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:16px;">
+          <button class="btn btn-primary" id="start-btn" type="button">Start Camera &amp; Attendance</button>
+          <button class="btn btn-outline" id="stop-btn" type="button" disabled>Stop</button>
+        </div>
+        <p style="font-size:0.78rem; color:var(--slate-400); margin-top:10px;">
+          Scanning every 1.5 seconds while active. Only one student should be in frame at a time.
+        </p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">Recognition Result</h3>
+        <div id="result-slot">
+          <div class="empty-state">Start the camera to begin recognizing students.</div>
+        </div>
+
+        <h4 style="margin-bottom:8px;">Session Log</h4>
+        <div class="table-wrap" style="max-height:260px; overflow-y:auto;">
+          <table class="data-table">
+            <thead><tr><th>Time</th><th>Student</th><th>Status</th></tr></thead>
+            <tbody id="session-log"><tr><td colspan="3" class="empty-state" style="padding:16px;">No scans yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/app.js"></script>
+<script src="js/camera.js"></script>
+<script>
+let camera = null;
+let scanInterval = null;
+let logRows = [];
+
+function renderResult(data) {
+  const slot = document.getElementById("result-slot");
+
+  if (!data.recognized) {
+    slot.innerHTML = `
+      <div class="recognition-result unknown">
+        <div class="check-circle">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+        </div>
+        <div>
+          <div class="rr-title">${data.message === "Unknown Student" ? "Unknown Student" : "Waiting..."}</div>
+          <div class="rr-meta">${data.message}</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  slot.innerHTML = `
+    <div class="recognition-result success">
+      <div class="check-circle">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+      </div>
+      <div>
+        <div class="rr-title">${data.already_marked ? "Attendance Already Recorded" : "Attendance Marked"}</div>
+        <div class="rr-meta">
+          <span><b>${data.name}</b></span>
+          <span>ID: <b>${data.student_id}</b></span>
+          <span>Time: <b>${data.time}</b></span>
+          <span>Confidence: <b>${data.confidence}%</b></span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function addLogRow(data) {
+  const now = new Date().toLocaleTimeString();
+  const label = data.recognized ? data.name : "Unknown";
+  const status = data.recognized ? (data.already_marked ? "Already marked" : "Marked present") : "Not recognized";
+  logRows.unshift({ now, label, status });
+  logRows = logRows.slice(0, 15);
+
+  const body = document.getElementById("session-log");
+  body.innerHTML = logRows
+    .map((r) => `<tr><td>${r.now}</td><td>${r.label}</td><td>${r.status}</td></tr>`)
+    .join("");
+}
+
+async function scanFrame() {
+  const frame = camera.captureFrameBase64();
+  if (!frame) return;
+  try {
+    const result = await api.post("/attendance/recognize", { image_base64: frame });
+    renderResult(result);
+    addLogRow(result);
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+document.getElementById("start-btn").addEventListener("click", async () => {
+  const video = document.getElementById("video");
+  const statusEl = document.getElementById("camera-status");
+  camera = new CameraController(video, statusEl);
+  const ok = await camera.start();
+  if (!ok) return;
+
+  document.getElementById("start-btn").disabled = true;
+  document.getElementById("stop-btn").disabled = false;
+  scanInterval = setInterval(scanFrame, 1500);
+});
+
+document.getElementById("stop-btn").addEventListener("click", () => {
+  clearInterval(scanInterval);
+  camera?.stop();
+  document.getElementById("start-btn").disabled = false;
+  document.getElementById("stop-btn").disabled = true;
+});
+</script>
+</body>
+</html>

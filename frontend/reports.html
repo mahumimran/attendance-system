@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Reports · Smart School Attendance</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1>Reports</h1>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div class="filters-bar" style="align-items:flex-end;">
+        <div>
+          <label style="display:block; font-size:0.78rem; font-weight:600; color:var(--slate-600); margin-bottom:6px;">Report Type</label>
+          <select id="report-type">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="class">By Class</option>
+            <option value="student">By Student</option>
+          </select>
+        </div>
+        <input type="date" id="r-date-from" />
+        <input type="date" id="r-date-to" />
+        <input type="text" id="r-student-id" placeholder="Student ID (optional)" />
+        <input type="text" id="r-class" placeholder="Class (optional)" />
+        <input type="text" id="r-section" placeholder="Section (optional)" />
+        <button class="btn btn-primary" id="generate-btn" type="button">Generate Report</button>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:20px;">
+      <div class="stat-card blue"><div class="value" id="rep-total">—</div><div class="label">Total Records</div></div>
+      <div class="stat-card green"><div class="value" id="rep-percentage">—</div><div class="label">Attendance Percentage</div></div>
+    </div>
+
+    <div class="card">
+      <div class="page-header" style="margin-bottom:14px;">
+        <h3 style="margin:0;">Attendance by Student</h3>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-outline" id="export-csv-btn" type="button">⬇ Export CSV</button>
+          <button class="btn btn-outline" id="export-excel-btn" type="button">⬇ Export Excel</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Student ID</th><th>Name</th><th>Attendance %</th></tr></thead>
+          <tbody id="report-body">
+            <tr><td colspan="3" class="empty-state" style="padding:24px;">Generate a report to see results.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+function buildParams() {
+  const params = new URLSearchParams();
+  params.append("report_type", document.getElementById("report-type").value);
+  const map = {
+    "r-date-from": "date_from", "r-date-to": "date_to",
+    "r-student-id": "student_id", "r-class": "class_name", "r-section": "section",
+  };
+  for (const [id, key] of Object.entries(map)) {
+    const val = document.getElementById(id).value.trim();
+    if (val) params.append(key, val);
+  }
+  return params;
+}
+
+document.getElementById("generate-btn").addEventListener("click", async () => {
+  const body = document.getElementById("report-body");
+  body.innerHTML = skeletonRows(3, 4);
+
+  try {
+    const summary = await api.get(`/reports/summary?${buildParams().toString()}`);
+    document.getElementById("rep-total").textContent = summary.total_records;
+    document.getElementById("rep-percentage").textContent = `${summary.attendance_percentage}%`;
+
+    if (summary.by_student.length === 0) {
+      body.innerHTML = `<tr><td colspan="3" class="empty-state" style="padding:24px;">No records for this selection.</td></tr>`;
+      return;
+    }
+    body.innerHTML = summary.by_student
+      .map((r) => `<tr><td>${r["Student ID"]}</td><td>${r["Name"]}</td><td>${r["Attendance %"]}%</td></tr>`)
+      .join("");
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+});
+
+function triggerExport(format) {
+  const params = buildParams();
+  params.delete("report_type");
+  params.append("file_format", format);
+  window.open(`/api/reports/export?${params.toString()}`, "_blank");
+}
+
+document.getElementById("export-csv-btn").addEventListener("click", () => triggerExport("csv"));
+document.getElementById("export-excel-btn").addEventListener("click", () => triggerExport("excel"));
+</script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Register Student · Smart School Attendance</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1>Register Student</h1>
+    </div>
+
+    <div class="grid-2">
+      <!-- Step 1: Student details -->
+      <div class="card">
+        <h3 style="margin-top:0;">1. Student Details</h3>
+        <form id="student-form">
+          <div class="form-group">
+            <label for="student_id">Student ID</label>
+            <input type="text" id="student_id" placeholder="ST-104" required />
+          </div>
+          <div class="form-group">
+            <label for="name">Full Name</label>
+            <input type="text" id="name" placeholder="Ahmed Khan" required />
+          </div>
+          <div class="form-group">
+            <label for="class_name">Class</label>
+            <input type="text" id="class_name" placeholder="Grade 8" required />
+          </div>
+          <div class="form-group">
+            <label for="section">Section</label>
+            <input type="text" id="section" placeholder="A" required />
+          </div>
+          <div class="form-group">
+            <label for="roll_number">Roll Number</label>
+            <input type="text" id="roll_number" placeholder="08" required />
+          </div>
+          <button type="submit" class="btn btn-primary" id="save-student-btn">Save Student &amp; Continue →</button>
+        </form>
+      </div>
+
+      <!-- Step 2: Face capture -->
+      <div class="card">
+        <h3 style="margin-top:0;">2. Face Registration</h3>
+        <p style="color:var(--slate-600); font-size:0.85rem; margin-top:-8px;">
+          Save the student's details first, then capture their face.
+        </p>
+
+        <div class="camera-box" id="camera-box">
+          <video id="video" autoplay muted playsinline></video>
+          <div class="camera-status" id="camera-status">
+            <span class="status-dot"></span>
+            <span class="status-text">Camera not started.</span>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:16px;">
+          <button class="btn btn-outline" id="start-camera-btn" type="button">Start Camera</button>
+          <button class="btn btn-gold" id="capture-btn" type="button" disabled>Capture &amp; Save Face</button>
+        </div>
+
+        <div id="pipeline-steps" style="margin-top:18px; display:none;">
+          <p class="panel-sub" style="margin-bottom:8px;">Processing pipeline:</p>
+          <div id="pipeline-list" style="font-size:0.82rem; color:var(--slate-600); display:flex; flex-direction:column; gap:4px;"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/app.js"></script>
+<script src="js/camera.js"></script>
+<script>
+let savedStudentId = null;
+let camera = null;
+
+document.getElementById("student-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const payload = {
+    student_id: document.getElementById("student_id").value.trim(),
+    name: document.getElementById("name").value.trim(),
+    class_name: document.getElementById("class_name").value.trim(),
+    section: document.getElementById("section").value.trim(),
+    roll_number: document.getElementById("roll_number").value.trim(),
+  };
+
+  try {
+    await api.post("/students", payload);
+    savedStudentId = payload.student_id;
+    showToast("Student saved. Now capture their face.", "success");
+    document.getElementById("start-camera-btn").disabled = false;
+    document.querySelectorAll("#student-form input").forEach((i) => (i.disabled = true));
+    document.getElementById("save-student-btn").disabled = true;
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+});
+
+document.getElementById("start-camera-btn").addEventListener("click", async () => {
+  const video = document.getElementById("video");
+  const statusEl = document.getElementById("camera-status");
+  camera = new CameraController(video, statusEl);
+  const ok = await camera.start();
+  if (ok) document.getElementById("capture-btn").disabled = false;
+});
+
+function setPipelineStep(label, state) {
+  const list = document.getElementById("pipeline-list");
+  list.parentElement.style.display = "block";
+  const icon = state === "done" ? "✓" : state === "active" ? "…" : "○";
+  const color = state === "done" ? "var(--green-600)" : state === "active" ? "var(--gold-600)" : "var(--slate-400)";
+  let row = document.getElementById(`step-${label}`);
+  if (!row) {
+    row = document.createElement("div");
+    row.id = `step-${label}`;
+    list.appendChild(row);
+  }
+  row.innerHTML = `<span style="color:${color}; font-weight:700;">${icon}</span> ${label}`;
+}
+
+document.getElementById("capture-btn").addEventListener("click", async () => {
+  if (!savedStudentId) {
+    showToast("Please save student details first.", "error");
+    return;
+  }
+  const frame = camera.captureFrameBase64();
+  if (!frame) {
+    showToast("Camera not ready yet.", "error");
+    return;
+  }
+
+  const btn = document.getElementById("capture-btn");
+  btn.disabled = true;
+  btn.textContent = "Processing...";
+
+  ["Face Detection", "Face Alignment", "Face Embedding", "Store Embedding"].forEach((s) => setPipelineStep(s, "pending"));
+  setPipelineStep("Face Detection", "active");
+
+  try {
+    await new Promise((r) => setTimeout(r, 300));
+    setPipelineStep("Face Detection", "done");
+    setPipelineStep("Face Alignment", "active");
+
+    const result = await api.post(`/students/${savedStudentId}/face`, { image_base64: frame });
+
+    setPipelineStep("Face Alignment", "done");
+    setPipelineStep("Face Embedding", "done");
+    setPipelineStep("Store Embedding", "done");
+
+    showToast(`Face registered! Quality score: ${result.quality_score}`, "success");
+    camera.stop();
+    btn.textContent = "Face Registered ✓";
+  } catch (err) {
+    setPipelineStep("Face Detection", "pending");
+    showToast(err.message, "error");
+    btn.disabled = false;
+    btn.textContent = "Capture & Save Face";
+  }
+});
+</script>
+</body>
+</html>

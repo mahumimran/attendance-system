@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Manual Attendance · Smart School Attendance</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1>Manual Attendance</h1>
+    </div>
+
+    <div class="card">
+      <div class="filters-bar">
+        <input type="date" id="filter-date" />
+        <input type="text" id="filter-class" placeholder="Class (e.g. Grade 8)" />
+        <input type="text" id="filter-section" placeholder="Section (e.g. A)" />
+        <button class="btn btn-outline" id="load-btn" type="button">Load Students</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Student ID</th><th>Name</th><th>Roll No.</th><th>Status</th></tr>
+          </thead>
+          <tbody id="manual-body">
+            <tr><td colspan="4" class="empty-state" style="padding:24px;">Select date, class, and section, then click "Load Students".</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+        <button class="btn btn-outline" id="mark-all-present-btn" type="button">Mark All Present</button>
+        <button class="btn btn-primary" id="save-attendance-btn" type="button">Save Attendance</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+let currentStudents = [];
+
+document.getElementById("filter-date").valueAsDate = new Date();
+
+document.getElementById("load-btn").addEventListener("click", async () => {
+  const className = document.getElementById("filter-class").value.trim();
+  const section = document.getElementById("filter-section").value.trim();
+  const body = document.getElementById("manual-body");
+  body.innerHTML = skeletonRows(4, 4);
+
+  try {
+    const params = new URLSearchParams();
+    if (className) params.append("class_name", className);
+    if (section) params.append("section", section);
+    currentStudents = await api.get(`/students?${params.toString()}`);
+
+    if (currentStudents.length === 0) {
+      body.innerHTML = `<tr><td colspan="4" class="empty-state" style="padding:24px;">No students found for this class/section.</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = currentStudents
+      .map(
+        (s) => `
+      <tr data-student-id="${s.student_id}">
+        <td>${s.student_id}</td>
+        <td>${s.name}</td>
+        <td>${s.roll_number}</td>
+        <td>
+          <select class="status-select" style="padding:6px 10px; border-radius:8px; border:1.5px solid var(--slate-200);">
+            <option value="Present">Present</option>
+            <option value="Absent">Absent</option>
+          </select>
+        </td>
+      </tr>`
+      )
+      .join("");
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+});
+
+document.getElementById("mark-all-present-btn").addEventListener("click", () => {
+  document.querySelectorAll(".status-select").forEach((sel) => (sel.value = "Present"));
+});
+
+document.getElementById("save-attendance-btn").addEventListener("click", async () => {
+  const date = document.getElementById("filter-date").value;
+  const className = document.getElementById("filter-class").value.trim();
+  const section = document.getElementById("filter-section").value.trim();
+
+  const rows = document.querySelectorAll("#manual-body tr[data-student-id]");
+  if (rows.length === 0) {
+    showToast("Load students before saving attendance.", "error");
+    return;
+  }
+
+  const entries = Array.from(rows).map((row) => ({
+    student_id: row.dataset.studentId,
+    status: row.querySelector(".status-select").value,
+  }));
+
+  try {
+    await api.post("/attendance/manual", { date, class_name: className, section, entries });
+    showToast("Attendance saved successfully.", "success");
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+});
+</script>
+</body>
+</html>

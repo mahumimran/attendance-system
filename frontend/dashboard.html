@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard · Smart School Attendance</title>
+<link rel="stylesheet" href="css/style.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <main class="main-content">
+    <div class="topbar">
+      <h1>Dashboard</h1>
+      <div class="date-chip">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span id="today-date-chip">—</span>
+      </div>
+    </div>
+
+    <div class="stat-grid" id="stat-grid">
+      <div class="stat-card blue">
+        <div class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+        <div class="value" id="stat-total">—</div>
+        <div class="label">Total Students</div>
+      </div>
+      <div class="stat-card green">
+        <div class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/></svg></div>
+        <div class="value" id="stat-present">—</div>
+        <div class="label">Present Today</div>
+      </div>
+      <div class="stat-card red">
+        <div class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg></div>
+        <div class="value" id="stat-absent">—</div>
+        <div class="label">Absent Today</div>
+      </div>
+      <div class="stat-card gold">
+        <div class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg></div>
+        <div class="value" id="stat-percentage">—</div>
+        <div class="label">Attendance Percentage</div>
+      </div>
+    </div>
+
+    <div class="chart-grid">
+      <div class="panel">
+        <h3>Weekly Attendance</h3>
+        <p class="panel-sub">Present vs. total students, last 7 days</p>
+        <canvas id="weeklyChart" height="120"></canvas>
+      </div>
+      <div class="panel">
+        <h3>Today's Present vs Absent</h3>
+        <p class="panel-sub">Live snapshot</p>
+        <canvas id="donutChart" height="180"></canvas>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Recent Attendance</h3>
+      <p class="panel-sub">Latest 8 check-ins across both methods</p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Student</th><th>Class</th><th>Time</th><th>Status</th><th>Method</th></tr>
+          </thead>
+          <tbody id="recent-attendance-body">
+            <tr><td colspan="5"><div class="skeleton" style="height:14px;"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+async function loadDashboard() {
+  try {
+    const summary = await api.get("/attendance/status/today-summary");
+    document.getElementById("stat-total").textContent = summary.total_students;
+    document.getElementById("stat-present").textContent = summary.present_today;
+    document.getElementById("stat-absent").textContent = summary.absent_today;
+    document.getElementById("stat-percentage").textContent = `${summary.attendance_percentage}%`;
+
+    new Chart(document.getElementById("donutChart"), {
+      type: "doughnut",
+      data: {
+        labels: ["Present", "Absent"],
+        datasets: [{ data: [summary.present_today, summary.absent_today], backgroundColor: ["#2f9e6b", "#e15554"], borderWidth: 0 }],
+      },
+      options: { plugins: { legend: { position: "bottom" } }, cutout: "68%" },
+    });
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+
+  try {
+    const trend = await api.get("/attendance/status/weekly-trend");
+    new Chart(document.getElementById("weeklyChart"), {
+      type: "line",
+      data: {
+        labels: trend.labels,
+        datasets: [
+          { label: "Present", data: trend.present, borderColor: "#2f9e6b", backgroundColor: "rgba(47,158,107,0.12)", fill: true, tension: 0.35 },
+          { label: "Absent", data: trend.absent, borderColor: "#e15554", backgroundColor: "rgba(225,85,84,0.08)", fill: true, tension: 0.35 },
+        ],
+      },
+      options: { plugins: { legend: { position: "bottom" } }, scales: { y: { beginAtZero: true } } },
+    });
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+
+  try {
+    const records = await api.get("/attendance");
+    const body = document.getElementById("recent-attendance-body");
+    body.innerHTML = "";
+    if (records.length === 0) {
+      body.innerHTML = `<tr><td colspan="5"><div class="empty-state">No attendance recorded yet.</div></td></tr>`;
+      return;
+    }
+    records.slice(0, 8).forEach((r) => {
+      body.innerHTML += `
+        <tr>
+          <td><b>${r.student.name}</b><br/><span style="color:var(--slate-400); font-size:0.78rem;">${r.student.student_id}</span></td>
+          <td>${r.student.class_name} - ${r.student.section}</td>
+          <td>${r.time}</td>
+          <td><span class="badge ${r.status.toLowerCase()}">${r.status}</span></td>
+          <td><span class="badge ${r.method.includes("AI") ? "ai" : "manual"}">${r.method}</span></td>
+        </tr>`;
+    });
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+loadDashboard();
+</script>
+</body>
+</html>
